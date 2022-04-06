@@ -1,0 +1,252 @@
+---
+title: "HarvardX Data Science Program"
+author: "Do Quang Anh"
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  pdf_document:
+    number_sections: yes
+    fig_caption: yes
+    toc: yes
+    fig_height: 3
+    includes: null
+  word_document:
+    toc: yes
+subtitle: Credit Card Fraud Detection project
+email: mr.anhdq@gmail.com
+---
+
+```{r Install Packages, include=FALSE}
+##Installing Packages
+# List of packages for session
+.packages = c("tidyverse",       #tidy alvvays and forever!
+              "corrplot",        #correlation plots
+              "cowplot",         #solve x-axis misalignment when plotting, and better-looking defaults for ggplots
+              "gridExtra",       #combine plots
+              "knitr",           #report output
+              "kableExtra",      #nice tables
+              "lubridate",       #date math!
+              "reshape2",        #acast to create matrix
+              "scales",          #get rid of scientific notation in charts
+              "splitstackshape",  #explode pipe-delimited data to one-hot encoded dummy variables
+              "dplyr",
+              "tm",
+              "tmap",
+              "wordcloud",
+              "knitr",
+              "tinytex",
+              "kableExtra",
+              "tidyr",
+              "stringr",
+              "ggplot2",
+              "gbm",
+              "caret",
+              "xgboost",
+              "e1071",
+              "class",
+              "ROCR",
+              "randomForest",
+              "PRROC",
+              "reshape2",
+              "caTools",
+              "Rtsne",
+              "data.table"
+             
+              )
+
+
+# Install CRAN packages (if not already installed)
+.inst <- .packages %in% installed.packages()
+if(length(.packages[!.inst]) > 0) install.packages(.packages[!.inst])
+# Load packages into session 
+lapply(.packages, require, character.only=TRUE)
+tinytex::install_tinytex()
+
+```
+
+```{r Functions and Hooks, include=FALSE}
+# Customize knitr output
+#Set Thousands Separator for inline output
+knitr::knit_hooks$set(inline = function(x) { if(!is.numeric(x)){ x }else{ prettyNum(round(x,2), big.mark=",") } })
+#we've already set the graphic device to "png" in the RMD options. the default device for pdfs draws every point of a scatterplot, creatinvg *very* big files.
+#But png is not as crisp, so we will set a higher resolution for pdf output of plots. 
+knitr::opts_chunk$set(dpi=150)
+#Create Kable wrapper function for thousands separator in table output, and nice formating with kableExtra
+niceKable = function(...) {
+  knitr::kable(..., format.args = list(decimal.mark = '.', big.mark = ",")) %>% kable_styling()
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\newpage
+
+# Introduction
+
+Billions of dollars of loss are caused every year due to fraudulent credit card transactions. The design of efficient fraud detection algorithms is key to reducing these losses, and more algorithms rely on advanced machine learning techniques to assist fraud investigators. The design of fraud detection algorithms is however particularly challenging due to non-stationary distribution of the data, highly imbalanced classes distributions and continuous streams of transactions. At the same time public data are scarcely available for confidentiality issues, leaving unanswered many questions about which is the best strategy to handle this issue.
+
+## About Dataset
+
+The dataset contains transactions made by credit cards in September 2013 by European cardholders.This dataset from Kaggle is available here: <https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud>. This dataset presents transactions that occurred in two days, where have 492 frauds out of 284,807 transactions. The dataset is highly unbalanced, the positive class (frauds) account for 0.172% of all transactions.
+
+It contains only numerical input variables which are the result of a PCA transformation. Unfortunately, due to confidentiality issues, features V1, V2, ... V28 are the principal components obtained with PCA, the only features which have not been transformed with PCA are 'Time' and 'Amount'. Feature 'Time' contains the seconds elapsed between each transaction and the first transaction in the dataset. The feature 'Amount' is the transaction Amount, this feature can be used for example-dependant cost-sensitive learning. Feature 'Class' is the response variable and it takes value 1 in case of fraud and 0 otherwise.
+
+Given the class imbalance ratio, recommend measuring the accuracy using the Area Under the Precision-Recall Curve (AUPRC). We will also use different sampling techniques (details below) on the train dataset in order to address the issue of imbalanced classes while training our models.
+
+# Exploratory data analysis and data cleaning
+
+```{r}
+# loading the data
+df = read.csv('creditcard.csv')
+```
+
+```{r echo=FALSE}
+tribble(
+  ~"Dataset",     ~"Number of Rows",    ~"Number of Columns",
+  #--             |--                   |----
+  "Credit card",   nrow(df),            ncol(df),
+  
+)%>%niceKable
+```
+
+```{r echo=FALSE}
+head(df)
+```
+
+All the features, apart from "time" and "amount" are anonymised. Let's see whether there is any missing data.
+
+```{r echo=FALSE}
+sapply(df, function(x) sum(is.na(x)))%>% niceKable
+
+```
+There are no NA values in the data.
+
+## Check for class imbalance 
+
+Unbalanced data refers to unequal instances of different classes. The visualization shown below further reflects the imbalance of non-fraud and fraud transactions in the dataset. We have class (0 --- No fraud, 1 --- fraud) on the X-axis and the percentage of instances plotted on Y-axis. We see that our dataset is highly unbalanced with respect to the class of interest(Fraud).
+
+```{r, echo=FALSE, include=TRUE}
+df %>%
+  group_by(Class) %>% 
+  summarise(Count = n()) %>% niceKable
+
+```
+
+```{r exploreClassImbalance, echo=FALSE, include=TRUE, fig.height = 7 }
+## Checking Class imbalance
+
+common_theme <- theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+ggplot(data = df, aes(x = factor(Class), y = prop.table(stat(count)), 
+                             fill = factor(Class),
+                             label = scales::percent(prop.table(stat(count))))) +
+  scale_fill_brewer(palette = "Set2") +
+  geom_bar(position = "dodge") +
+  geom_text(stat = 'count',
+            position = position_dodge(.9),
+            vjust = -0.5,
+            size = 3) +
+  scale_x_discrete(labels = c("no fraud", "fraud")) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = 'Class', y = 'Percentage') + 
+  ggtitle ("Distribution of Class Variable") +
+  common_theme
+```
+
+\newpage
+
+## Time variable - Frauds over Time Distribution
+
+In the graph below, notice that the number of regular transactions drops sharply around the 90,000th-second mark, to surge again around the 110,000th-second mark. It wouldn't be absurd to assume that this period is during the night when individuals naturally perform fewer purchases and transactions than during the daytime.
+
+On the other hand, a great number of fraudulent transactions occurred around the 100,000 mark, which could confirm the previous assumption, considering that criminals should prefer to commit fraud late at night, assuming there would be less surveillance and victims would not realize they were being scammed soon enough.
+
+```{r exploreTime}
+df %>%
+  ggplot(aes(x = Time, fill = factor(Class))) + geom_histogram(bins = 100)+
+  labs(x = 'Time in Seconds Since First Transaction', y = 'No. of Transactions') +
+  ggtitle('Distribution of Time of Transaction by Class') +
+  scale_fill_brewer(palette = "Set2") +
+  facet_grid(Class ~ ., scales = 'free_y') + common_theme
+```
+
+## Amount Variable
+
+The boxplot below demonstrates the Amount of each transaction is more variable with the non-fraud transactions than with the fraud transactions given the number of outliers. Most transactions, both regular and fraudulent, were of "small" values. Small amount of money, less or equal of one dollar are scammed more frequently.
+
+```{r exploreAmount, echo=FALSE, include=TRUE}
+ggplot(df,aes(x = factor(Class), y =  Amount)) +
+  geom_boxplot()+
+  labs(x= 'Class (non-Fraud vs Fraud)', y = 'Amount (Euros)') +
+  ggtitle("Distribution of Transaction Amount by Class") +
+  common_theme
+
+```
+
+```{r exploreFraudAmount, echo=FALSE, include=TRUE}
+df[df$Class == 1,] %>%
+  ggplot(aes(Amount))+
+  geom_histogram(col = "black", fill ="darkseagreen3",binwidth = 40)+
+  labs(x ='Amount', y ='Frequency')+
+  ggtitle('Frauds Amounts Distributions')
+
+```
+
+## Correlations between each variables
+
+```{r exploreCorrelation, echo=FALSE, include=TRUE}
+#Correlations
+correlations <- cor(df[,], method='spearman')
+round(correlations, 2)
+##title <- "Correlation of Fraud Dataset Variables"
+corrplot(correlations, number.cex = .9, type = "full",
+              method = "color", tl.cex=0.8,tl.col = "black")
+```
+
+\newpage
+
+# Analysis - Models Building and Comparison 
+
+## Data Pre Processing 
+
+**1. Remove the "Time" column and Change 'Class' variable to factor from the dataset**
+
+```{r removeTime, echo=FALSE, include=TRUE}
+# Set seed for reproducibility
+set.seed(1234)
+# Remove the "Time" column from the dataset
+df <- df %>% select(-Time)
+#Change 'Class' variable to factor
+df$Class <- as.factor(df$Class)
+```
+
+**2.Split the dataset into train, test, cv dataset**
+
+```{r splitData, echo=FALSE, include=FALSE}
+# Split the dataset into train, test and cross validation dataset
+train_index = createDataPartition(y = df$Class,
+                                  p = .6,
+                                  list = F)
+train <- df[train_index,]
+test_cv <-df[-train_index,]
+
+test_index = createDataPartition(y = test_cv$Class,
+                                  p = .5,
+                                  list = F)
+
+test <- test_cv[test_index,]
+cv <- test_cv[-test_index,]
+
+rm(train_index, test_index, test_cv)
+```
+## Classification Models 
+Classification is the process of predicting discrete variables (1/0, Yes/no, etc.). Given the case with our dataset, it will be more optimistic to deploy a classification model rather than any others.
+To better understand which algorithm would perform best on the given dataset, the following algorithms are used:Naive Baseline, KNN, Random Forest,XGBoost
+### Naive Baseline Algorithm
+### KNN
+### Random Forest
+### XGBoost
