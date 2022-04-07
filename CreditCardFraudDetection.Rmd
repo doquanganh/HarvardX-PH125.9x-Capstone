@@ -308,7 +308,7 @@ results %>%
 
 A KNN Model with k=5 can achieve a significant improvement in respect to the previous models, as regard AUCPR of **0.58** at the expense of a little drop off AUC, that is **0.81**.
 
-```{r KNN, echo=FALSE, include=FALSE}
+```{r KNN, echo=FALSE, include=TRUE}
 # Set seed 1234 for reproducibility
 
 set.seed(1234)
