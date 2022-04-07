@@ -124,9 +124,10 @@ All the features, apart from "time" and "amount" are anonymised. Let's see wheth
 sapply(df, function(x) sum(is.na(x)))%>% niceKable
 
 ```
+
 There are no NA values in the data.
 
-## Check for class imbalance 
+## Check for class imbalance
 
 Unbalanced data refers to unequal instances of different classes. The visualization shown below further reflects the imbalance of non-fraud and fraud transactions in the dataset. We have class (0 --- No fraud, 1 --- fraud) on the X-axis and the percentage of instances plotted on Y-axis. We see that our dataset is highly unbalanced with respect to the class of interest(Fraud).
 
@@ -209,9 +210,9 @@ corrplot(correlations, number.cex = .9, type = "full",
 
 \newpage
 
-# Analysis - Models Building and Comparison 
+# Analysis - Models Building and Comparison
 
-## Data Pre Processing 
+## Data Pre Processing
 
 **1. Remove the "Time" column and Change 'Class' variable to factor from the dataset**
 
@@ -243,10 +244,331 @@ cv <- test_cv[-test_index,]
 
 rm(train_index, test_index, test_cv)
 ```
-## Classification Models 
-Classification is the process of predicting discrete variables (1/0, Yes/no, etc.). Given the case with our dataset, it will be more optimistic to deploy a classification model rather than any others.
-To better understand which algorithm would perform best on the given dataset, the following algorithms are used:Naive Baseline, KNN, Random Forest,XGBoost
-### Naive Baseline Algorithm
+
+## Classification Models
+
+Classification is the process of predicting discrete variables (1/0, Yes/no, etc.). Given the case with our dataset, it will be more optimistic to deploy a classification model rather than any others. To better understand which algorithm would perform best on the given dataset, the following algorithms are used:Naive Bayes, KNN, Random Forest,XGBoost
+
+### Naive Algorithm
+
+```{r Naive, echo=FALSE, include=FALSE}
+# Set seed 1234 for reproducibility
+set.seed(1234)
+# Build the model with Class as target and all other variables as predictors
+naive_model <- naiveBayes(Class ~ ., data = train, laplace=1)
+#Prediction with training and test data
+predictions <- predict(naive_model, newdata=test)
+# Compute the AUC and AUCPR for the Naive Model
+pred <- prediction(as.numeric(predictions), test$Class)
+
+auc_naive <- performance(pred, "auc")
+auc_p_naive <- performance(pred, 'sens', 'spec')
+aucpr_p_naive <- performance(pred, "prec", "rec")
+
+aucpr_naive <- pr.curve(
+  scores.class0 = predictions[test$Class == 1], 
+  scores.class1 = predictions[test$Class == 0],
+  curve = T,  
+  dg.compute = T
+)
+
+# Make the relative plot
+plot(aucpr_naive)
+plot(auc_p_naive, main=paste("AUC:", auc_naive@y.values[[1]]))
+plot(aucpr_p_naive, main=paste("AUCPR:", aucpr_naive$auc.integral))
+
+
+# Create a dataframe 'results' that contains all metrics 
+# obtained by the trained models
+
+results <- data.frame(
+  Model = "Naive Bayes", 
+  AUC = auc_naive@y.values[[1]],
+  AUCPR = aucpr_naive$auc.integral
+)
+
+# Show results on a table
+
+results %>% 
+  kable() %>%
+  kable_styling(
+    bootstrap_options = 
+      c("striped", "hover", "condensed", "responsive"),
+      position = "center",
+      font_size = 10,
+      full_width = FALSE
+)
+
+
+```
+
+\newpage
+
 ### KNN
+
+A KNN Model with k=5 can achieve a significant improvement in respect to the previous models, as regard AUCPR of **0.58** at the expense of a little drop off AUC, that is **0.81**.
+
+```{r KNN, echo=FALSE, include=FALSE}
+# Set seed 1234 for reproducibility
+
+set.seed(1234)
+
+# Build a KNN Model with Class as Target and all other variables as predictors. k is set to 5
+
+knn_model <- knn(train[,-30], test[,-30], train$Class, k=5, prob = TRUE)
+
+# Compute the AUC and AUCPR for the KNN Model
+
+pred <- prediction(
+  as.numeric(as.character(knn_model)), as.numeric(as.character(test$Class))
+)
+
+auc_knn <- performance(pred, "auc")
+
+auc_p_knn <- performance(pred, 'sens', 'spec')
+aucpr_p_knn <- performance(pred, "prec", "rec")
+
+aucpr_knn <- pr.curve(
+  scores.class0 = knn_model[test$Class == 1], 
+  scores.class1 = knn_model[test$Class == 0],
+  curve = T,  
+  dg.compute = T
+)
+
+# Make the relative plot
+
+plot(aucpr_knn)
+plot(auc_p_knn, main=paste("AUC:", auc_knn@y.values[[1]]))
+plot(aucpr_p_knn, main=paste("AUCPR:", aucpr_knn$auc.integral))
+
+# Adding the respective metrics to the results dataset
+
+results <- results %>% add_row(
+  Model = "K-Nearest Neighbors k=5", 
+  AUC = auc_knn@y.values[[1]],
+  AUCPR = aucpr_knn$auc.integral
+)
+
+# Show results on a table
+
+results %>%
+   kable() %>%
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+       position = "center",
+       font_size = 10,
+       full_width = FALSE)
+
+```
+
+\newpage
+
 ### Random Forest
+
+The ensemble methods are capable of a significant increase in performance. At the expense of another little drop off in terms of AUC (**0.9**) respect to the Naive Bayes model, there is a huge step forward in terms of AUCPR, that is **0.77**. This model doesn't reach the desidered performance (AUCPR > 0.85), but it's close to it. As the plot and the table below suggest, there are few predictors like **V17**, **V12** and **V14** that are particularly useful for classifying a fraud.
+ 
+```{r RandomForest, echo=FALSE, include=TRUE}
+# Set seed 1234 for reproducibility
+
+set.seed(1234)
+
+# Build a Random Forest Model with Class as Target and all other
+# variables as predictors. The number of trees is set to 500
+
+rf_model <- randomForest(Class ~ ., data = train, ntree = 500)
+
+# Get the feature importance
+
+feature_imp_rf <- data.frame(importance(rf_model))
+
+# Make predictions based on this model
+
+predictions <- predict(rf_model, newdata=test)
+
+# Compute the AUC and AUPCR
+
+pred <- prediction(
+  as.numeric(as.character(predictions)),                                 as.numeric(as.character(test$Class))
+)
+
+auc_val_rf <- performance(pred, "auc")
+
+auc_plot_rf <- performance(pred, 'sens', 'spec')
+
+aucpr_plot_rf <- performance(pred, "prec", "rec", curve = T,  dg.compute = T)
+
+aucpr_val_rf <- pr.curve(scores.class0 = predictions[test$Class == 1], scores.class1 = predictions[test$Class == 0],curve = T,  dg.compute = T)
+
+# make the relative plot
+
+plot(auc_plot_rf, main=paste("AUC:", auc_val_rf@y.values[[1]]))
+plot(aucpr_plot_rf, main=paste("AUCPR:", aucpr_val_rf$auc.integral))
+plot(aucpr_val_rf)
+
+# Adding the respective metrics to the results dataset
+
+results <- results %>% add_row(
+  Model = "Random Forest",
+  AUC = auc_val_rf@y.values[[1]],
+  AUCPR = aucpr_val_rf$auc.integral)
+
+# Show results on a table
+
+results %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed",           "responsive"),
+      position = "center",
+      font_size = 10,
+      full_width = FALSE)
+
+# Show feature importance on a table
+
+feature_imp_rf %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed",           "responsive"),
+      position = "center",
+      font_size = 10,
+      full_width = FALSE)
+```
+
+\newpage
+
 ### XGBoost
+
+XGBoost are a top class model. It always stays on TOP5 (or wins them) in every competitions on Kaggle and in this case, its' very fast to train and its performance are awesome. With an AUC of **0.98** and an AUCPR of **0.86** it reach and overtake the desidered performance. As the previous model shown, **V17** and **V14** are still relevant to predict a fraud.
+
+```{r XGBoost, echo=FALSE, include=TRUE}
+# Set seet 1234 for reproducibility
+
+set.seed(1234)
+
+# Prepare the training dataset
+
+xgb_train <- xgb.DMatrix(
+  as.matrix(train[, colnames(train) != "Class"]), 
+  label = as.numeric(as.character(train$Class))
+)
+
+# Prepare the test dataset
+
+xgb_test <- xgb.DMatrix(
+  as.matrix(test[, colnames(test) != "Class"]), 
+  label = as.numeric(as.character(test$Class))
+)
+
+# Prepare the cv dataset
+
+xgb_cv <- xgb.DMatrix(
+  as.matrix(cv[, colnames(cv) != "Class"]), 
+  label = as.numeric(as.character(cv$Class))
+)
+
+# Prepare the parameters list. 
+
+xgb_params <- list(
+  objective = "binary:logistic", 
+  eta = 0.1, 
+  max.depth = 3, 
+  nthread = 6, 
+  eval_metric = "aucpr"
+)
+
+# Train the XGBoost Model
+
+xgb_model <- xgb.train(
+  data = xgb_train, 
+  params = xgb_params, 
+  watchlist = list(test = xgb_test, cv = xgb_cv), 
+  nrounds = 500, 
+  early_stopping_rounds = 40,
+  verbosity = 0,
+  print_every_n = 100,
+  silent = T,
+
+)
+
+# Get feature importance
+feature_imp_xgb <- xgb.importance(model = xgb_model)
+xgb.plot.importance(feature_imp_xgb, rel_to_first = TRUE, xlab = "Relative importance")
+
+# Make predictions based on this model
+
+predictions = predict(
+  xgb_model, 
+  newdata = as.matrix(test[, colnames(test) != "Class"]), 
+  ntreelimit = xgb_model$bestInd
+)
+
+# Compute the AUC and AUPCR
+
+pred <- prediction(
+  as.numeric(as.character(predictions)),                                 as.numeric(as.character(test$Class))
+)
+
+auc_val_xgb <- performance(pred, "auc")
+
+auc_plot_xgb <- performance(pred, 'sens', 'spec')
+aucpr_plot_xgb <- performance(pred, "prec", "rec")
+
+aucpr_val_xgb <- pr.curve(
+  scores.class0 = predictions[test$Class == 1], 
+  scores.class1 = predictions[test$Class == 0],
+  curve = T,  
+  dg.compute = T
+)
+
+# Make the relative plot
+
+plot(auc_plot_xgb, main=paste("AUC:", auc_val_xgb@y.values[[1]]))
+plot(aucpr_plot_xgb, main=paste("AUCPR:", aucpr_val_xgb$auc.integral))
+plot(aucpr_val_xgb)
+
+# Adding the respective metrics to the results dataset
+
+results <- results %>% add_row(
+  Model = "XGBoost",
+  AUC = auc_val_xgb@y.values[[1]],
+  AUCPR = aucpr_val_xgb$auc.integral)
+
+# Show results on a table
+
+results %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+      position = "center",
+      font_size = 10,
+      full_width = FALSE)
+
+# Show feature importance on a table
+
+feature_imp_xgb %>%
+  kable() %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+      position = "center",
+      font_size = 10,
+      full_width = FALSE)
+
+```
+
+\newpage
+
+# Results
+
+This is the summary results for all the models builted, trained and validated.
+
+```{r Results, echo=FALSE, include=TRUE}
+# Shows the results
+
+results %>% niceKable
+```
+
+# Conclusion
+
+
+The ensemble methods once again confirm themselves as among the best models out there. It easy to find them as a winners of numerous Kaggle's competitions or on TOP5 of them. In this task, a XGBoost model can achieve a very good AUCPR result of **0.86** and the others ensembe methods are very close to it. As the features importance plots and table show, there are few predictors like **V17** and **V14** that are particularly useful for classifying a fraud. The SMOTE technique (a technique for dealing with imbalanced data) could improve the performance a little bit.
+
+\newpage
+
+# Literature
+
+1.  [Rafael A. Irizarry, Introduction to Data Science](https://rafalab.github.io/dsbook/)
+2.  [HarvardX Data Science Program](https://courses.edx.org/dashboard/programs/3c32e3e0-b6fe-4ee4-bd4f-210c6339e074/)
