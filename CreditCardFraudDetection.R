@@ -1,26 +1,4 @@
----
-title: "HarvardX Data Science Program"
-author: "Do Quang Anh"
-date: "`r format(Sys.Date())`"
-output:
-  pdf_document: 
-    number_sections: yes
-    fig_caption: yes
-    toc: yes
-    fig_height: 3
-    includes: null
-    latex_engine: lualatex
-    keep_tex: yes
-  html_document:
-    toc: yes
-    df_print: paged
-  word_document:
-    toc: yes
-subtitle: Credit Card Fraud Detection project
-email: mr.anhdq@gmail.com
----
-
-```{r Install Packages, include=FALSE}
+## ----Install Packages, include=FALSE---------------------------------------------------------------------------------
 ##Installing Packages
 # List of packages for session
 .packages = c("tidyverse",       #tidy alvvays and forever!
@@ -64,11 +42,11 @@ email: mr.anhdq@gmail.com
 if(length(.packages[!.inst]) > 0) install.packages(.packages[!.inst])
 # Load packages into session 
 lapply(.packages, require, character.only=TRUE)
-#tinytex::install_tinytex()
+tinytex::install_tinytex()
 
-```
 
-```{r Functions and Hooks, include=FALSE}
+
+
 # Customize knitr output
 #Set Thousands Separator for inline output
 knitr::knit_hooks$set(inline = function(x) { if(!is.numeric(x)){ x }else{ prettyNum(round(x,2), big.mark=",") } })
@@ -80,66 +58,30 @@ niceKable = function(...) {
   knitr::kable(..., format.args = list(decimal.mark = '.', big.mark = ",")) %>% kable_styling()
 }
 
-```
-
-```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-```
 
-\newpage
 
-# Introduction
-
-Billions of dollars of loss are caused every year due to fraudulent credit card transactions. The design of efficient fraud detection algorithms is key to reducing these losses, and more algorithms rely on advanced machine learning techniques to assist fraud investigators. The design of fraud detection algorithms is however particularly challenging due to non-stationary distribution of the data, highly imbalanced classes distributions and continuous streams of transactions. At the same time public data are scarcely available for confidentiality issues, leaving unanswered many questions about which is the best strategy to handle this issue.
-
-## About Dataset
-
-The dataset contains transactions made by credit cards in September 2013 by European cardholders.This dataset from Kaggle is available here: <https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud>. This dataset presents transactions that occurred in two days, where have 492 frauds out of 284,807 transactions. The dataset is highly unbalanced, the positive class (frauds) account for 0.172% of all transactions.
-
-It contains only numerical input variables which are the result of a PCA transformation. Unfortunately, due to confidentiality issues, features V1, V2, ... V28 are the principal components obtained with PCA, the only features which have not been transformed with PCA are 'Time' and 'Amount'. Feature 'Time' contains the seconds elapsed between each transaction and the first transaction in the dataset. The feature 'Amount' is the transaction Amount, this feature can be used for example-dependant cost-sensitive learning. Feature 'Class' is the response variable and it takes value 1 in case of fraud and 0 otherwise.
-
-Given the class imbalance ratio, recommend measuring the accuracy using the Area Under the Precision-Recall Curve (AUPRC). We will also use different sampling techniques (details below) on the train dataset in order to address the issue of imbalanced classes while training our models.
-
-\newpage
-
-# Exploratory data analysis and data cleaning
-
-```{r echo=FALSE}
 # loading the data
 df = read.csv('creditcard.csv')
-```
 
-```{r eda, echo=FALSE, include=TRUE}
 tribble(
   ~"Dataset",     ~"Number of Rows",    ~"Number of Columns",
   #--             |--                   |----
   "Credit card",   nrow(df),            ncol(df),
   
 )%>%niceKable
-```
-\newpage
-All the features, apart from "time" and "amount" are anonymised. Let's see whether there is any missing data.
 
-```{r CHECKMISSING, echo=FALSE, include=TRUE}
+
+## Check missing data
 sapply(df, function(x) sum(is.na(x)))%>% niceKable
 
-```
 
-There are no NA values in the data.
-
-\newpage
-## Check for class imbalance
-
-Unbalanced data refers to unequal instances of different classes. The visualization shown below further reflects the imbalance of non-fraud and fraud transactions in the dataset. We have class (0 --- No fraud, 1 --- fraud) on the X-axis and the percentage of instances plotted on Y-axis. We see that our dataset is highly unbalanced with respect to the class of interest(Fraud).
-
-```{r Checkclassimbalance , echo=FALSE, include=TRUE}
+#Check for class imbalance
 df %>%
   group_by(Class) %>% 
   summarise(Count = n()) %>% niceKable
 
-```
 
-```{r exploreClassImbalance, echo=FALSE, include=TRUE, fig.height = 7 }
 ## Checking Class imbalance
 
 common_theme <- theme(plot.title = element_text(hjust = 0.5, face = "bold"))
@@ -157,78 +99,50 @@ ggplot(data = df, aes(x = factor(Class), y = prop.table(stat(count)),
   labs(x = 'Class', y = 'Percentage') + 
   ggtitle ("Distribution of Class Variable") +
   common_theme
-```
 
-\newpage
 
-## Time variable - Frauds over Time Distribution
-
-In the graph below, notice that the number of regular transactions drops sharply around the 90,000th-second mark, to surge again around the 110,000th-second mark. It wouldn't be absurd to assume that this period is during the night when individuals naturally perform fewer purchases and transactions than during the daytime.
-
-On the other hand, a great number of fraudulent transactions occurred around the 100,000 mark, which could confirm the previous assumption, considering that criminals should prefer to commit fraud late at night, assuming there would be less surveillance and victims would not realize they were being scammed soon enough.
-
-```{r exploreTime}
+#Distribution of Time of Transaction by Class
 df %>%
   ggplot(aes(x = Time, fill = factor(Class))) + geom_histogram(bins = 100)+
   labs(x = 'Time in Seconds Since First Transaction', y = 'No. of Transactions') +
   ggtitle('Distribution of Time of Transaction by Class') +
   scale_fill_brewer(palette = "Set2") +
   facet_grid(Class ~ ., scales = 'free_y') + common_theme
-```
 
-## Amount Variable
 
-The boxplot below demonstrates the Amount of each transaction is more variable with the non-fraud transactions than with the fraud transactions given the number of outliers. Most transactions, both regular and fraudulent, were of "small" values. Small amount of money, less or equal of one dollar are scammed more frequently.
-
-```{r exploreAmount, echo=FALSE, include=TRUE}
+#Distribution of Transaction Amount by Class
 ggplot(df,aes(x = factor(Class), y =  Amount)) +
   geom_boxplot()+
   labs(x= 'Class (non-Fraud vs Fraud)', y = 'Amount (Euros)') +
   ggtitle("Distribution of Transaction Amount by Class") +
   common_theme
 
-```
 
-```{r exploreFraudAmount, echo=FALSE, include=TRUE}
+
+#Frauds Amounts Distributions
 df[df$Class == 1,] %>%
   ggplot(aes(Amount))+
   geom_histogram(col = "black", fill ="darkseagreen3",binwidth = 40)+
   labs(x ='Amount', y ='Frequency')+
   ggtitle('Frauds Amounts Distributions')
 
-```
 
-## Correlations between each variables
-
-```{r exploreCorrelation, echo=FALSE, include=TRUE}
-#Correlations
+#Correlation of Fraud Dataset Variables
 correlations <- cor(df[,], method='spearman')
 round(correlations, 2)
 ##title <- "Correlation of Fraud Dataset Variables"
 corrplot(correlations, number.cex = .9, type = "full",
               method = "color", tl.cex=0.8,tl.col = "black")
-```
 
-\newpage
 
-# Analysis - Models Building and Comparison
-
-## Data Pre Processing
-
-**1. Remove the "Time" column and Change 'Class' variable to factor from the dataset**
-
-```{r removeTime, echo=TRUE, include=TRUE}
+#Remove the “Time” column and Change ‘Class’ variable to factor from the dataset
 # Set seed for reproducibility
 set.seed(1234)
 # Remove the "Time" column from the dataset
 df <- df %>% select(-Time)
 #Change 'Class' variable to factor
 df$Class <- as.factor(df$Class)
-```
 
-**2. Split the dataset into train, test, cv dataset**
-
-```{r splitData, echo=TRUE, include=TRUE}
 # Split the dataset into train, test and cross validation dataset
 train_index = createDataPartition(y = df$Class,
                                   p = .6,
@@ -244,15 +158,9 @@ test <- test_cv[test_index,]
 cv <- test_cv[-test_index,]
 
 rm(train_index, test_index, test_cv)
-```
 
-## Classification Models
 
-Classification is the process of predicting discrete variables (1/0, Yes/no, etc.). Given the case with our dataset, it will be more optimistic to deploy a classification model rather than any others. To better understand which algorithm would perform best on the given dataset, the following algorithms are used:Naive Bayes, KNN, Random Forest,XGBoost
-
-### Naive Algorithm
-
-```{r Naive, echo=FALSE, include=TRUE}
+##Naive Algorithm
 # Set seed 1234 for reproducibility
 set.seed(1234)
 # Build the model with Class as target and all other variables as predictors
@@ -273,7 +181,7 @@ aucpr_naive <- pr.curve(
   dg.compute = T
 )
 
-# Make the relative plot
+# Make the relative plot of Naive Algorithm
 plot(aucpr_naive)
 plot(auc_p_naive, main=paste("AUC:", auc_naive@y.values[[1]]))
 plot(aucpr_p_naive, main=paste("AUCPR:", aucpr_naive$auc.integral))
@@ -288,7 +196,7 @@ results <- data.frame(
   AUCPR = aucpr_naive$auc.integral
 )
 
-# Show results on a table
+# Show results of Naive Algorithm on a table
 
 results %>% 
   kable() %>%
@@ -301,20 +209,11 @@ results %>%
 )
 
 
-```
 
-\newpage
 
-### KNN
-
-A KNN Model with k=5 can achieve a significant improvement in respect to the previous models, as regard AUCPR of **0.58** at the expense of a little drop off AUC, that is **0.81**.
-
-```{r KNN, echo=FALSE, include=TRUE}
+## # Build a KNN Model with Class as Target and all other variables as predictors. k is set to 5
 # Set seed 1234 for reproducibility
-
 set.seed(1234)
-
-# Build a KNN Model with Class as Target and all other variables as predictors. k is set to 5
 
 knn_model <- knn(train[,-30], test[,-30], train$Class, k=5, prob = TRUE)
 
@@ -336,7 +235,7 @@ aucpr_knn <- pr.curve(
   dg.compute = T
 )
 
-# Make the relative plot
+# Make the relative plot for the KNN
 
 plot(aucpr_knn)
 plot(auc_p_knn, main=paste("AUC:", auc_knn@y.values[[1]]))
@@ -350,19 +249,13 @@ results <- results %>% add_row(
   AUCPR = aucpr_knn$auc.integral
 )
 
-# Show results on a table
+# Show results of KNN on a table
 
 results %>% niceKable
 
-```
 
-\newpage
 
-### Random Forest
-
-The ensemble methods are capable of a significant increase in performance. At the expense of another little drop off in terms of AUC (**0.9**) respect to the Naive Bayes model, there is a huge step forward in terms of AUCPR, that is **0.77**. This model doesn't reach the desidered performance (AUCPR \> 0.85), but it's close to it. As the plot and the table below suggest, there are few predictors like **V17**, **V12** and **V14** that are particularly useful for classifying a fraud.
-
-```{r RandomForest, echo=FALSE, include=TRUE}
+## ----RandomForest
 # Set seed 1234 for reproducibility
 
 set.seed(1234)
@@ -372,15 +265,15 @@ set.seed(1234)
 
 rf_model <- randomForest(Class ~ ., data = train, ntree = 500)
 
-# Get the feature importance
+# Get the feature importance of RandomForest
 
 feature_imp_rf <- data.frame(importance(rf_model))
 
-# Make predictions based on this model
+# Make predictions based on Random Forest model
 
 predictions <- predict(rf_model, newdata=test)
 
-# Compute the AUC and AUPCR
+# Compute the AUC and AUPCR of Random Forest
 
 pred <- prediction(
   as.numeric(as.character(predictions)),                                 as.numeric(as.character(test$Class))
@@ -394,7 +287,7 @@ aucpr_plot_rf <- performance(pred, "prec", "rec", curve = T,  dg.compute = T)
 
 aucpr_val_rf <- pr.curve(scores.class0 = predictions[test$Class == 1], scores.class1 = predictions[test$Class == 0],curve = T,  dg.compute = T)
 
-# make the relative plot
+# make the relative plot of Random Forest
 
 plot(auc_plot_rf, main=paste("AUC:", auc_val_rf@y.values[[1]]))
 plot(aucpr_plot_rf, main=paste("AUCPR:", aucpr_val_rf$auc.integral))
@@ -407,48 +300,42 @@ results <- results %>% add_row(
   AUC = auc_val_rf@y.values[[1]],
   AUCPR = aucpr_val_rf$auc.integral)
 
-# Show results on a table
+# Show results of Random Forest on a table
 
 results %>% niceKable
 
-# Show feature importance on a table
+# Show feature importance on a table - Random Forest
 
 feature_imp_rf %>% niceKable
-```
 
-\newpage
 
-### XGBoost
-
-XGBoost are a top class model. It always stays on TOP5 (or wins them) in every competitions on Kaggle and in this case, its' very fast to train and its performance are awesome. With an AUC of **0.98** and an AUCPR of **0.86** it reach and overtake the desidered performance. As the previous model shown, **V17** and **V14** are still relevant to predict a fraud.
-
-```{r XGBoost, echo=FALSE, include=TRUE}
+## ----XGBoost, echo=FALSE, include=TRUE-------------------------------------------------------------------------------
 # Set seet 1234 for reproducibility
 
 set.seed(1234)
 
-# Prepare the training dataset
+# Prepare the training dataset for XGBoost model
 
 xgb_train <- xgb.DMatrix(
   as.matrix(train[, colnames(train) != "Class"]), 
   label = as.numeric(as.character(train$Class))
 )
 
-# Prepare the test dataset
+# Prepare the test dataset for XGBoost model
 
 xgb_test <- xgb.DMatrix(
   as.matrix(test[, colnames(test) != "Class"]), 
   label = as.numeric(as.character(test$Class))
 )
 
-# Prepare the cv dataset
+# Prepare the cv dataset for XGBoost model
 
 xgb_cv <- xgb.DMatrix(
   as.matrix(cv[, colnames(cv) != "Class"]), 
   label = as.numeric(as.character(cv$Class))
 )
 
-# Prepare the parameters list. 
+# Prepare the parameters list for XGBoost model
 
 xgb_params <- list(
   objective = "binary:logistic", 
@@ -472,11 +359,11 @@ xgb_model <- xgb.train(
 
 )
 
-# Get feature importance
+# Get feature importance on XGBoost model
 feature_imp_xgb <- xgb.importance(model = xgb_model)
 xgb.plot.importance(feature_imp_xgb, rel_to_first = TRUE, xlab = "Relative importance")
 
-# Make predictions based on this model
+# Make predictions based on  XGBoost model model
 
 predictions = predict(
   xgb_model, 
@@ -484,7 +371,7 @@ predictions = predict(
   ntreelimit = xgb_model$bestInd
 )
 
-# Compute the AUC and AUPCR
+# Compute the AUC and AUPCR on  XGBoost model
 
 pred <- prediction(
   as.numeric(as.character(predictions)),                                 as.numeric(as.character(test$Class))
@@ -502,7 +389,7 @@ aucpr_val_xgb <- pr.curve(
   dg.compute = T
 )
 
-# Make the relative plot
+# Make the relative plot on  XGBoost model
 
 plot(auc_plot_xgb, main=paste("AUC:", auc_val_xgb@y.values[[1]]))
 plot(aucpr_plot_xgb, main=paste("AUCPR:", aucpr_val_xgb$auc.integral))
@@ -515,7 +402,7 @@ results <- results %>% add_row(
   AUC = auc_val_xgb@y.values[[1]],
   AUCPR = aucpr_val_xgb$auc.integral)
 
-# Show results on a table
+# Show results on a table of XGBoost model
 
 results %>% niceKable
 
@@ -523,28 +410,7 @@ results %>% niceKable
 
 feature_imp_xgb %>% niceKable
 
-```
 
-\newpage
-
-# Results
-
-This is the summary results for all the models builted, trained and validated.
-
-```{r Results, echo=FALSE, include=TRUE}
-# Shows the results
-
+# Shows the results of these model
 results %>% niceKable
-```
 
-\newpage
-# Conclusion
-
-The ensemble methods once again confirm themselves as among the best models out there. It easy to find them as a winners of numerous Kaggle's competitions or on TOP5 of them. In this task, a XGBoost model can achieve a very good AUCPR result of **0.86** and the others ensembe methods are very close to it. As the features importance plots and table show, there are few predictors like **V17** and **V14** that are particularly useful for classifying a fraud. The SMOTE technique (a technique for dealing with imbalanced data) could improve the performance a little bit.
-
-\newpage
-
-# Literature
-
-1.  [Rafael A. Irizarry, Introduction to Data Science](https://rafalab.github.io/dsbook/)
-2.  [HarvardX Data Science Program](https://courses.edx.org/dashboard/programs/3c32e3e0-b6fe-4ee4-bd4f-210c6339e074/)
