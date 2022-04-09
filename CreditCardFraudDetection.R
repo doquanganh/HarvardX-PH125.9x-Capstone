@@ -62,8 +62,12 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 # loading the data
+if (!(file.exists('creditcard.csv'))) {
+  download.file("http://ngocanhparis.online/creditcard.csv",'creditcard.csv')
+}
 df = read.csv('creditcard.csv')
 
+#Overview Dataset
 tribble(
   ~"Dataset",     ~"Number of Rows",    ~"Number of Columns",
   #--             |--                   |----

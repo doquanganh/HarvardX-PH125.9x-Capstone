@@ -106,6 +106,9 @@ Given the class imbalance ratio, recommend measuring the accuracy using the Area
 
 ```{r echo=FALSE}
 # loading the data
+if (!(file.exists('creditcard.csv'))) {
+ download.file("http://ngocanhparis.online/creditcard.csv",'creditcard.csv')
+}
 df = read.csv('creditcard.csv')
 ```
 
